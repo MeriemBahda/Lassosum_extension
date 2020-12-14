@@ -536,9 +536,9 @@ int elnet(double lambda1, double lambda2, const arma::vec& diag, const arma::mat
 
 
 // [[Rcpp::export]]
-int repelnet(double lambda1, double lambda2, arma::vec& diag, arma::mat& X, arma::vec& r,
-          double thr, arma::vec& x, arma::vec& yhat, int trace, int maxiter,
-          arma::Col<int>& startvec, arma::Col<int>& endvec)
+int repelnet(double lambda1, double lambda2, arma::vec& diag, arma::mat& X, arma::vec& r, arma ::mat& Inv_Sigma,
+             double thr, arma::vec& x, arma::vec& yhat, int trace, int maxiter,
+             arma::Col<int>& startvec, arma::Col<int>& endvec)
 {
 
   // Repeatedly call elnet by blocks...
@@ -551,6 +551,11 @@ int repelnet(double lambda1, double lambda2, arma::vec& diag, arma::mat& X, arma
                    diag.subvec(startvec(i), endvec(i)),
                    X.cols(startvec(i), endvec(i)),
                    r.subvec(startvec(i), endvec(i)),
+                   // Je ne sais pas comment je dois faire pour Inv_Sigma,
+                  // la variable blocks is a vector to split the genome by blocks (coded as c(1,1,..., 2, 2, ..., etc.))
+                   // Pour le cas d'un seul trait, chaque composante de la variable block fait référence à un SNP
+                   // Pour le cas de plusieurs traits, est-ce que chaque composante de la variable block devrait
+                   // faire référence à un SNP ou un trait particulier d'un SNP ?
                    thr, xtouse,
                    yhattouse, trace - 1, maxiter);
     x.subvec(startvec(i), endvec(i))=xtouse;
