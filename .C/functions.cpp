@@ -536,9 +536,9 @@ int elnet(double lambda1, double lambda2, const arma::vec& diag, const arma::mat
 
 
 // [[Rcpp::export]]
-int repelnet(double lambda1, double lambda2, arma::vec& diag, arma::mat& X, arma::vec& r,
-          double thr, arma::vec& x, arma::vec& yhat, int trace, int maxiter,
-          arma::Col<int>& startvec, arma::Col<int>& endvec)
+int repelnet(double lambda1, double lambda2, arma::vec& diag, arma::mat& X, arma::vec& r, arma ::mat& Inv_Sigma,
+             double thr, arma::vec& x, arma::vec& yhat, int trace, int maxiter,
+             arma::Col<int>& startvec, arma::Col<int>& endvec)
 {
 
   // Repeatedly call elnet by blocks...
@@ -551,6 +551,11 @@ int repelnet(double lambda1, double lambda2, arma::vec& diag, arma::mat& X, arma
                    diag.subvec(startvec(i), endvec(i)),
                    X.cols(startvec(i), endvec(i)),
                    r.subvec(startvec(i), endvec(i)),
+                   // Je ne sais pas comment je dois faire pour Inv_Sigma,
+                  // la variable blocks is a vector to split the genome by blocks (coded as c(1,1,..., 2, 2, ..., etc.))
+                   // Pour le cas d'un seul trait, chaque composante de la variable block fait référence à un SNP
+                   // Pour le cas de plusieurs traits, est-ce que chaque composante de la variable block devrait
+                   // faire référence à un SNP ou un trait particulier d'un SNP ?
                    thr, xtouse,
                    yhattouse, trace - 1, maxiter);
     x.subvec(startvec(i), endvec(i))=xtouse;
@@ -695,6 +700,7 @@ arma::vec normalize(arma::mat &genotypes)
 //' @param lambda1 a vector of lambdas (lambda2 is 0)
 //' @param fileName the file name of the reference panel
 //' @param r a vector of correlations
+//' @param Inv_Sigma the inverse of the variance-covariance matrix of Y
 //' @param N number of subjects
 //' @param P number of position in reference file
 //' @param col_skip_posR which variants should we skip
@@ -709,13 +715,14 @@ arma::vec normalize(arma::mat &genotypes)
 //' @return a list of results
 //' @keywords internal
 //'
+
 // [[Rcpp::export]]
 List runElnet(arma::vec& lambda, double shrink, const std::string fileName,
-              arma::vec& r, int N, int P,
-			  arma::Col<int>& col_skip_pos, arma::Col<int>& col_skip,
-			  arma::Col<int>& keepbytes, arma::Col<int>& keepoffset,
-			  double thr, arma::vec& x, int trace, int maxiter,
-			  arma::Col<int>& startvec, arma::Col<int>& endvec) {
+              arma::vec& r, arma ::mat& Inv_Sigma ,int N, int P,
+              arma::Col<int>& col_skip_pos, arma::Col<int>& col_skip,
+              arma::Col<int>& keepbytes, arma::Col<int>& keepoffset,
+              double thr, arma::vec& x, int trace, int maxiter,
+              arma::Col<int>& startvec, arma::Col<int>& endvec) {
   // a) read bed file
   // b) standardize genotype matrix
   // c) multiply by constatant factor
@@ -725,12 +732,12 @@ List runElnet(arma::vec& lambda, double shrink, const std::string fileName,
 
   int i,j;
   arma::mat genotypes = genotypeMatrix(fileName, N, P, col_skip_pos, col_skip, keepbytes,
-                             keepoffset, 1);
+                                       keepoffset, 1);
   // Rcout << "DEF" << std::endl;
 
   if (genotypes.n_cols != r.n_elem) {
     throw std::runtime_error("Number of positions in reference file is not "
-                             "equal the number of regression coefficients");
+                               "equal the number of regression coefficients");
   }
 
   arma::vec sd = normalize(genotypes);
@@ -747,9 +754,9 @@ List runElnet(arma::vec& lambda, double shrink, const std::string fileName,
   arma::vec diag(r.n_elem); diag.fill(1.0 - shrink);
   // Rcout << "HIJ" << std::endl;
 
-	for(j=0; j < diag.n_elem; j++) {
-		if(sd(j) == 0.0) diag(j) = 0.0;
-	}
+  for(j=0; j < diag.n_elem; j++) {
+    if(sd(j) == 0.0) diag(j) = 0.0;
+  }
   // Rcout << "LMN" << std::endl;
 
   arma::vec fbeta(lambda.n_elem);
@@ -762,8 +769,8 @@ List runElnet(arma::vec& lambda, double shrink, const std::string fileName,
     if (trace > 0)
       Rcout << "lambda: " << lambda(i) << "\n" << std::endl;
     out(i) =
-        repelnet(lambda(i), shrink, diag,genotypes, r, thr, x, yhat, trace-1, maxiter,
-                 startvec, endvec);
+      repelnet(lambda(i), shrink, diag,genotypes, r,Inv_Sigma, thr, x, yhat, trace-1, maxiter,
+               startvec, endvec);
     beta.col(i) = x;
     for(j=0; j < beta.n_rows; j++) {
       if(sd(j) == 0.0) beta(j,i)=beta(j,i) * shrink;
@@ -773,16 +780,16 @@ List runElnet(arma::vec& lambda, double shrink, const std::string fileName,
     }
     pred.col(i) = yhat;
     loss(i) = arma::as_scalar(arma::sum(arma::pow(yhat, 2)) -
-                              2.0 * arma::sum(x % r));
+      2.0 * arma::sum(x % r));
     fbeta(i) =
-        arma::as_scalar(loss(i) + 2.0 * arma::sum(arma::abs(x)) * lambda(i) +
-                        arma::sum(arma::pow(x, 2)) * shrink);
+      arma::as_scalar(loss(i) + 2.0 * arma::sum(arma::abs(x)) * lambda(i) +
+      arma::sum(arma::pow(x, 2)) * shrink);
   }
   return List::create(Named("lambda") = lambda,
-					  Named("beta") = beta,
+                      Named("beta") = beta,
                       Named("conv") = out,
-					  Named("pred") = pred,
+                      Named("pred") = pred,
                       Named("loss") = loss,
-					  Named("fbeta") = fbeta,
-					  Named("sd")= sd);
+                      Named("fbeta") = fbeta,
+                      Named("sd")= sd);
 }
