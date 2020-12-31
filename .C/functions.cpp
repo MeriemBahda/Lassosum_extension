@@ -415,23 +415,27 @@ int elnet(double lambda1, double lambda2, const arma::vec& diag, const arma::mat
   // They are modified in place in this function.
 
 
-  int nq =X.n_rows;
+  //on n'a pas besoin de cet élément
+  //int nq =X.n_rows;
+
   int pq =X.n_cols;
   int q = Inv_Sigma.n_cols;
   int p = pq/q;
 
-  if(r.n_elem != pq) stop("r.n_elem != pq");
-  if(x.n_elem != pq) stop("x.n_elem != pq");
-  if(yhat.n_elem != nq) stop("yhat.n_elem != nq");
-  if(diag.n_elem != pq) stop("diag.n_elem != pq");
+  // avant je comparais r.n_elem avec pq, mais on me donnait warning, donc je compare directement
+  // r.n_elem avec X.n_cols, pareil pour les autres
+  if(r.n_elem != X.n_cols) stop("r.n_elem != X.n_cols");
+  if(x.n_elem != X.n_cols) stop("x.n_elem != X.n_cols");
+  if(yhat.n_elem != X.n_rows) stop("yhat.n_elem != X.n_rows");
+  if(diag.n_elem != X.n_cols) stop("diag.n_elem != X.n_cols");
 
-  double dlx,del,t1,t2,t3, A;
+  double dlx,del,t1,t2,t3, A,S ;
 
   // j : indice des SNPs, k : indice des traits, m: indice des itérations, u indice pour parcourir le vecteur x ( des betas ),
   // h indice utilisé pour définir t1 , l incide utilisé pour définir t3
   int j,k,m,u,h,l;
 
-  // On définit le vecteur x_before ( qui contient les valeurs des betas à l’itération t-1 )
+  // On définit le vecteur x_before ( qui contient les valeurs des betas à l'itération t-1 )
   arma :: vec x_before(pq);
 
   arma::vec Lambda2(pq);
@@ -439,90 +443,80 @@ int elnet(double lambda1, double lambda2, const arma::vec& diag, const arma::mat
   Lambda2.fill(lambda2);
   arma::vec denom=diag + Lambda2;
 
- // On définit le vecteur C , on en aura besoin pour le calcul du terme t3, c'est t(Xj)*Xl*Beta*l, un terme
- // de taille q
+  // On définit le vecteur C , on en aura besoin pour le calcul du terme t3, c'est t(Xj)*Xl*Beta*l, un vecteur
+  // de taille q
   arma::vec C(q);
-
 
   int conv=0;
 
-  for(int m=0;m<maxiter ;m++) {
+  for(m=0;m<maxiter ;m++) {
     dlx=0.0;
 
-    for(int u=0; u < pq; u++) {
-      // Mon beta est x : c’est un vecteur de taille pq : x = ( q betas pour le SNP1 , q betas pour le SNP 2, .., q betas pour le SNP p )
+    for(u=0; u < pq; u++) {
+      // Mon beta est x : c'est un vecteur de taille pq : x = ( q betas pour le SNP1 , q betas pour le SNP 2, .., q betas pour le SNP p )
       x_before =x;
       x(u)=0.0;
 
       // On initialise les termes dont on aura besoin : t1, t2 et t3 ( ce sont les 3 composantes de A comme définie dans la partie théorique )
+      // ainsi que A et S
       t1 = 0.0 ;
       t2 = 0.0 ;
       t3 = 0.0 ;
+      A = 0.0 ;
+      S = 0.0 ;
 
       // boucle sur les SNPS :
-      for ( int j= 0; j<p; j++) {
+      for (j= 0; j<p; j++) {
 
         // Pour chaque SNP, on fait une boucle sur les traits :
-        for(int k=0; k < q; k++) {
+        for(k=0; k < q; k++) {
 
-          // On définit le terme t1 :
           // RMQ : c++ commence à indicer à partir de 0 ( le premier élément d'un vecteur à l'indice 0),
           // alors que R commence à indicer à partir de 1 ( le premier élément d'un vecteur à l'indice 1 )
-          // c'est pourquoi on selectionne denom à partir de q*(j-1))-1 et non à partir de q*(j-1)
-          // jusqu'à q*j-1 et non q*j
-          // même chose lorsqu'on souhaite séléctionner un élément à la position n d'un vecteur ( en commençant par 1)
-          // il faut choisir l'indice n-1, d'où la raison pourquoi on a choisit x_before.at(q*(j-1)+h-1) et non
-          // x_before.at(q*(j-1)+h)
-          // de même pour l'indice quand on travaille avec des matrice, on choisit l'indice n-1,n-1 quand notre élément
-          // se trouve dans la case n,n ( quand on commence à partir de 1)
-          // c'est pourquoi on prend l'élément k-1,k-1 de Inv_sigma, et non k,k.
 
-          for (int h =0 ; h<q;h++){
-            //l'expression que j'avais lorsque A était un vecteur
-            //if (h!=k) t1=t1+ Inv_Sigma.at(k-1,k-1)*x_before.at(q*(j-1)+h-1)*denom.subvec(q*(j-1)-1,q*j-1);
+          // On définit le terme t1 :
 
-            if (h!=k) t1=t1+ Inv_Sigma.at(k-1,k-1)*x_before.at(q*(j-1)+h-1)*denom.at(q*(j-1)+k-1);
+          for (h =0 ; h<q;h++){
+            if (h!=k) t1=t1+ Inv_Sigma.at(k,k)*x_before.at(q*j+h)*denom.at(q*j+k);
 
           }
 
           // On définit le terme t2 :
 
-          //l'expression que j'avais lorsque A était un vecteur
-          //t2 = -2* Inv_Sigma[k-1,k-1]*r(q*(j-1)-1 :q*j-1) ;
-          t2 = -2* Inv_Sigma.at(k-1,k-1)*r.at(q*(j-1)+k-1) ;
+          t2 = -2*(arma::dot(Inv_Sigma.row(k),r.subvec(q*j,q*(j+1)-1)))  ;
 
 
           // On définit le terme t3 :
 
-          for(int l=0; l< p;l++){
-            //l'expression que j'avais lorsque A était un vecteur
-            //if(l!=j) t3 = 2*Inv_Sigma*arma::dot(X.col(q*(j-1) :q*j), X.col(q*(l-1) :q*l), x_before (q*(l-1) :q*l));
-            C = trans(X.cols(q*(j-1)-1,q*j-1))*X.cols(q*(l-1)-1,q*l-1)*x_before.subvec(q*(l-1)-1,q*l-1);
-            if(l!=j) t3 = 2*Inv_Sigma.at(k-1,k-1)*C.at(k-1);
+          for(l=0; l< p;l++){
+            C = trans(X.cols(q*j,q*(j+1)-1))*X.cols(q*l,q*(l+1)-1)*x_before.subvec(q*l,q*(l+1)-1);
+            if(l!=j) S = S + C.at(k);
+            t3 = 2*Inv_Sigma.at(k,k)*S;
           }
 
-          A=t1+t2+t3
+          A=t1+t2+t3;
 
             // On définit maintenant la solution Beta
-            if (A < 0)  if (A + lambda1 <0 ) x(q*(j-1)+k-1) = (A+ lambda1)/Inv_Sigma[k-1,k-1]*denom.at(q*(j-1)+k-1);
+            if (A < 0)  if (A + lambda1 <0 ) x.at(u) = (A+ lambda1)/Inv_Sigma.at(k,k)*denom.at(q*j+k);
 
-            if (A > 0) if (A - lambda1> 0) x(q*(j-1)+k-1) = (A- lambda1)/Inv_Sigma[k-1,k-1]*denom.at(q*(j-1)+k-1);
+            if (A > 0) if (A - lambda1> 0) x.at(u) = (A- lambda1)/Inv_Sigma.at(k,k)*denom.at(q*j+k);
 
 
-            if ( x(u)==x_before(u) ) continue;
-            del = x(u)-x_before(u);
+            if ( x.at(u)==x_before.at(u) ) continue;
+            del = x.at(u)-x_before.at(u);
             dlx=std::max(dlx,std::abs(del));
 
             // Est-ce que cette expression est correcte ??
-            //yhat += del*X.col(q*(j-1)+k-1);
+            //yhat += del*X.col(q*j+k);
             // les 2 expressions veulent dire la même chose je pense
             yhat += del*X.col(u);
-
 
         }
 
       }
+
     }
+
     checkUserInterrupt();
     if(trace > 0) Rcout << "Iteration: " << m << "\n";
 
@@ -533,7 +527,6 @@ int elnet(double lambda1, double lambda2, const arma::vec& diag, const arma::mat
   }
   return conv;
 }
-
 
 // [[Rcpp::export]]
 int repelnet(double lambda1, double lambda2, arma::vec& diag, arma::mat& X, arma::vec& r, arma ::mat& Inv_Sigma,
