@@ -410,6 +410,7 @@ int elnet(double lambda1, double lambda2, const arma::vec& diag, const arma::mat
           const arma::vec& r, const arma ::mat& Inv_Sigma, double thr, arma::vec& x, arma::vec& yhat, int trace, int maxiter)
 {
 
+
   // diag is basically diag(X'X)
   // Also, ensure that the yhat=X*x in the input. Usually, both x and yhat are preset to 0.
   // They are modified in place in this function.
@@ -420,7 +421,8 @@ int elnet(double lambda1, double lambda2, const arma::vec& diag, const arma::mat
 
   int pq =X.n_cols;
   int q = Inv_Sigma.n_cols;
-  int p = pq/q;
+  int p = (pq)/(q);
+
 
   // avant je comparais r.n_elem avec pq, mais on me donnait warning, donc je compare directement
   // r.n_elem avec X.n_cols, pareil pour les autres
@@ -436,14 +438,14 @@ int elnet(double lambda1, double lambda2, const arma::vec& diag, const arma::mat
   int j,k,m,u,h,l;
 
   // On définit le vecteur x_before ( qui contient les valeurs des betas à l'itération t-1 )
-  arma :: vec x_before(pq);
+  arma :: vec x_before(pq,arma::fill::zeros);
 
   arma::vec Lambda2(pq);
 
   Lambda2.fill(lambda2);
   arma::vec denom=diag + Lambda2;
 
-  // On définit le vecteur C , on en aura besoin pour le calcul du terme t3, c'est t(Xj)*Xl*Beta*l, un vecteur
+  // On définit le vecteur C , on en aura besoin pour le calcul du terme t3, c'est t(Xj)*Xl*Betal, un vecteur
   // de taille q
   arma::vec C(q);
 
@@ -451,25 +453,27 @@ int elnet(double lambda1, double lambda2, const arma::vec& diag, const arma::mat
 
   for(m=0;m<maxiter ;m++) {
     dlx=0.0;
-
-    for(u=0; u < pq; u++) {
       // Mon beta est x : c'est un vecteur de taille pq : x = ( q betas pour le SNP1 , q betas pour le SNP 2, .., q betas pour le SNP p )
-      x_before =x;
-      x(u)=0.0;
 
-      // On initialise les termes dont on aura besoin : t1, t2 et t3 ( ce sont les 3 composantes de A comme définie dans la partie théorique )
-      // ainsi que A et S
-      t1 = 0.0 ;
-      t2 = 0.0 ;
-      t3 = 0.0 ;
-      A = 0.0 ;
-      S = 0.0 ;
+      x_before = x;
 
       // boucle sur les SNPS :
       for (j= 0; j<p; j++) {
 
         // Pour chaque SNP, on fait une boucle sur les traits :
         for(k=0; k < q; k++) {
+
+          x.at(q*j+k)=0.0;
+
+
+          // On initialise les termes dont on aura besoin : t1, t2 et t3 ( ce sont les 3 composantes de A comme définie dans la partie théorique )
+          // ainsi que A et S
+
+          t1 = 0.0 ;
+          t2 = 0.0 ;
+          t3 = 0.0 ;
+          A = 0.0 ;
+          S = 0.0 ;
 
           // RMQ : c++ commence à indicer à partir de 0 ( le premier élément d'un vecteur à l'indice 0),
           // alors que R commence à indicer à partir de 1 ( le premier élément d'un vecteur à l'indice 1 )
@@ -478,44 +482,46 @@ int elnet(double lambda1, double lambda2, const arma::vec& diag, const arma::mat
 
           for (h =0 ; h<q;h++){
             if (h!=k) t1=t1+ Inv_Sigma.at(k,k)*x_before.at(q*j+h)*denom.at(q*j+k);
-
           }
 
           // On définit le terme t2 :
 
           t2 = -2*(arma::dot(Inv_Sigma.row(k),r.subvec(q*j,q*(j+1)-1)))  ;
 
-
           // On définit le terme t3 :
 
           for(l=0; l< p;l++){
             C = trans(X.cols(q*j,q*(j+1)-1))*X.cols(q*l,q*(l+1)-1)*x_before.subvec(q*l,q*(l+1)-1);
             if(l!=j) S = S + C.at(k);
-            t3 = 2*Inv_Sigma.at(k,k)*S;
           }
+
+          t3 = 2*Inv_Sigma.at(k,k)*S;
 
           A=t1+t2+t3;
 
-            // On définit maintenant la solution Beta
-            if (A < 0)  if (A + lambda1 <0 ) x.at(u) = (A+ lambda1)/Inv_Sigma.at(k,k)*denom.at(q*j+k);
+          // On définit maintenant la solution Beta
 
-            if (A > 0) if (A - lambda1> 0) x.at(u) = (A- lambda1)/Inv_Sigma.at(k,k)*denom.at(q*j+k);
+          if (A < 0){
+            if (A + lambda1 <0 ) {
+              x.at(q*j+k) = (A+ lambda1)/(Inv_Sigma.at(k,k)*denom.at(q*j+k));
+            }
+          }
 
+          if (A > 0){
+            if (A - lambda1> 0){
+              x.at(q*j+k) = (A- lambda1)/(Inv_Sigma.at(k,k)*denom.at(q*j+k));
+              }
+          }
 
-            if ( x.at(u)==x_before.at(u) ) continue;
-            del = x.at(u)-x_before.at(u);
-            dlx=std::max(dlx,std::abs(del));
+          if (x.at(q*j+k)==x_before.at(q*j+k) ) continue;
+          del = x.at(q*j+k)-x_before.at(q*j+k);
+          dlx=std::max(dlx,std::abs(del));
 
-            // Est-ce que cette expression est correcte ??
-            //yhat += del*X.col(q*j+k);
-            // les 2 expressions veulent dire la même chose je pense
-            yhat += del*X.col(u);
+          yhat += del*X.col(q*j+k);
 
         }
 
       }
-
-    }
 
     checkUserInterrupt();
     if(trace > 0) Rcout << "Iteration: " << m << "\n";
@@ -525,8 +531,10 @@ int elnet(double lambda1, double lambda2, const arma::vec& diag, const arma::mat
       break;
     }
   }
+
   return conv;
 }
+
 
 // [[Rcpp::export]]
 int repelnet(double lambda1, double lambda2, arma::vec& diag, arma::mat& X, arma::vec& r, arma ::mat& Inv_Sigma,
@@ -540,15 +548,12 @@ int repelnet(double lambda1, double lambda2, arma::vec& diag, arma::mat& X, arma
   for(int i=0;i < startvec.n_elem; i++) {
     arma::vec xtouse=x.subvec(startvec(i), endvec(i));
     arma::vec yhattouse=X.cols(startvec(i), endvec(i)) * xtouse;
+
     int out2=elnet(lambda1, lambda2,
                    diag.subvec(startvec(i), endvec(i)),
                    X.cols(startvec(i), endvec(i)),
                    r.subvec(startvec(i), endvec(i)),
-                   // Je ne sais pas comment je dois faire pour Inv_Sigma,
-                  // la variable blocks is a vector to split the genome by blocks (coded as c(1,1,..., 2, 2, ..., etc.))
-                   // Pour le cas d'un seul trait, chaque composante de la variable block fait référence à un SNP
-                   // Pour le cas de plusieurs traits, est-ce que chaque composante de la variable block devrait
-                   // faire référence à un SNP ou un trait particulier d'un SNP ?
+                   Inv_Sigma,
                    thr, xtouse,
                    yhattouse, trace - 1, maxiter);
     x.subvec(startvec(i), endvec(i))=xtouse;
@@ -688,11 +693,87 @@ arma::vec normalize(arma::mat &genotypes)
 	return sd;
 }
 
+
+// We will build a function that could construct the Genotype
+// matrix for multiple phenotypes
+
+//' Constructs a Genotype Matrix for multiples phenotypes from a
+//' genotype matrix for 1 phenotype
+//'
+//' @param GenotypeMatrix genotype matrix for one phenotype
+//' @param q number of phenotypes
+//' @return an armadillo genotype matrix
+//' @keywords internal
+
+// [[Rcpp::export]]
+arma::mat GenotypeMatrixMultiplePhenotypes(const arma::mat& GenotypeMatrix, int q){
+  int p = GenotypeMatrix.n_cols;// number of SNPs
+  int n = GenotypeMatrix.n_rows;// number of subjects
+
+  arma::mat GenotypeMatrixMultiPheno (n*q,q*p);
+  arma::mat GenotypeMatrix_col(n,q*p);
+
+  // Step 1 : we have to duplicate the rows and columns of the matrix
+  // the number of duplicate is the number of phenotypes we have
+
+  // We start by duplicating the columns
+  for(int i=1;i<p+1 ;i ++) {
+    for(int j =(i-1)*q;j<i*q;j++) {
+      GenotypeMatrix_col.col(j) = GenotypeMatrix.col(i-1);
+    }
+  }
+
+  // we now duplicate the rows
+  for(int i=1;i<n+1 ;i ++) {
+    for(int j =(i-1)*q;j<i*q;j++) {
+      GenotypeMatrixMultiPheno.row(j) = GenotypeMatrix_col.row(i-1);
+    }
+  }
+
+  // Step 2 : Some elements should now be set to 0
+
+  for(int i=1;i<n+1 ;i ++) {
+    for(int j=1;j<p+1 ;j ++) {
+      GenotypeMatrixMultiPheno.cols((j-1)*q,j*q-1).rows((i-1)*q,i*q-1) = arma::diagmat(GenotypeMatrixMultiPheno.cols((j-1)*q,j*q-1).rows((i-1)*q,i*q-1));
+    }
+  }
+
+  return GenotypeMatrixMultiPheno;
+}
+
+// We will build a function that could construct the sd vector
+// for multiple traits
+
+//' Constructs an sd vector for multiple phenotypes from a
+//' sd vector for 1 phenotype
+//'
+//' @param sd  vector of sd for one phenotype
+//' @param q number of phenotypes
+//' @return an armadillo sd vector
+//' @keywords internal
+
+// [[Rcpp::export]]
+arma::vec sd_MultiplePhenotypes(const arma::vec& sd, int q){
+  int p = sd.n_elem;// number of SNPs
+
+  arma::vec sd_MultiPheno (q*p,arma::fill::zeros);
+
+  // we duplicate the elements of sd q times
+
+  for(int i=1;i<p+1 ;i ++) {
+    for(int j =(i-1)*q;j<i*q;j++) {
+      sd_MultiPheno.at(j) = sd.at(i-1);
+    }
+  }
+
+  return sd_MultiPheno;
+}
+
 //' Runs elnet with various parameters
 //'
 //' @param lambda1 a vector of lambdas (lambda2 is 0)
 //' @param fileName the file name of the reference panel
-//' @param r a vector of correlations
+//' @param cor a matrix of correlations, rows represent phenotypes, and columns represent SNPs
 //' @param Inv_Sigma the inverse of the variance-covariance matrix of Y
 //' @param N number of subjects
 //' @param P number of position in reference file
@@ -701,7 +782,7 @@ arma::vec normalize(arma::mat &genotypes)
 //' @param keepbytesR required to read the PLINK file
 //' @param keepoffsetR required to read the PLINK file
 //' @param thr threshold
-//' @param x a numeric vector of beta coefficients
+//' @param init a numeric matrix of beta coefficients
 //' @param trace if >1 displays the current iteration
 //' @param maxiter maximal number of iterations
 //' @param Constant a constant to multiply the standardized genotype matrix
@@ -710,11 +791,16 @@ arma::vec normalize(arma::mat &genotypes)
 //'
 
 // [[Rcpp::export]]
+
+
+// Je n'ai pas encore modifié l'expression de fbeta et loss !
+
+
 List runElnet(arma::vec& lambda, double shrink, const std::string fileName,
-              arma::vec& r, arma ::mat& Inv_Sigma ,int N, int P,
+              arma::mat& cor, arma ::mat& Inv_Sigma ,int N, int P,
               arma::Col<int>& col_skip_pos, arma::Col<int>& col_skip,
               arma::Col<int>& keepbytes, arma::Col<int>& keepoffset,
-              double thr, arma::vec& x, int trace, int maxiter,
+              double thr, arma::mat& init, int trace, int maxiter,
               arma::Col<int>& startvec, arma::Col<int>& endvec) {
   // a) read bed file
   // b) standardize genotype matrix
@@ -724,18 +810,45 @@ List runElnet(arma::vec& lambda, double shrink, const std::string fileName,
   // Rcout << "ABC" << std::endl;
 
   int i,j;
-  arma::mat genotypes = genotypeMatrix(fileName, N, P, col_skip_pos, col_skip, keepbytes,
+
+  arma::mat genotypes_one_phenotype = genotypeMatrix(fileName, N, P, col_skip_pos, col_skip, keepbytes,
                                        keepoffset, 1);
+
+  // On commence par normaliser la matrice génotype pour un seul phénotype
+
+  arma::vec sd = normalize(genotypes_one_phenotype);
+  // On construit le vecteur sd pour plusieurs phenotypes
+  arma::vec sd_MultiplePheno = sd_MultiplePhenotypes(sd,Inv_Sigma.n_cols);
+
+  genotypes_one_phenotype *= sqrt(1.0 - shrink);
+
+  // Ensuite on construit la matrice pour plusieurs phénotypes
+
+  arma::mat genotypes = GenotypeMatrixMultiplePhenotypes(genotypes_one_phenotype,Inv_Sigma.n_cols);
+
   // Rcout << "DEF" << std::endl;
+
+  // Ici, je transforme cor et init en des vecteurs pour pouvoir travailler avec :
+
+  arma::vec r(cor.n_rows*cor.n_cols,arma::fill::zeros);
+  int b = 0;
+  for(int a=0; a < r.n_elem; a+=cor.n_rows) {
+    r.subvec(a,a+cor.n_rows-1) = cor.col(b);
+    b=b+1;
+    }
+
+  arma::vec x(init.n_rows*init.n_cols,arma::fill::zeros);
+  int q = 0;
+  for(int e=0; e < x.n_elem; e+=init.n_rows) {
+    x.subvec(e,e+init.n_rows-1) = init.col(q);
+    q=q+1;
+  }
 
   if (genotypes.n_cols != r.n_elem) {
     throw std::runtime_error("Number of positions in reference file is not "
                                "equal the number of regression coefficients");
   }
 
-  arma::vec sd = normalize(genotypes);
-
-  genotypes *= sqrt(1.0 - shrink);
 
   arma::Col<int> conv(lambda.n_elem);
   int len = r.n_elem;
@@ -748,7 +861,7 @@ List runElnet(arma::vec& lambda, double shrink, const std::string fileName,
   // Rcout << "HIJ" << std::endl;
 
   for(j=0; j < diag.n_elem; j++) {
-    if(sd(j) == 0.0) diag(j) = 0.0;
+    if(sd_MultiplePheno(j) == 0.0) diag(j) = 0.0;
   }
   // Rcout << "LMN" << std::endl;
 
@@ -766,11 +879,14 @@ List runElnet(arma::vec& lambda, double shrink, const std::string fileName,
                startvec, endvec);
     beta.col(i) = x;
     for(j=0; j < beta.n_rows; j++) {
-      if(sd(j) == 0.0) beta(j,i)=beta(j,i) * shrink;
+      if(sd_MultiplePheno(j) == 0.0) beta(j,i)=beta(j,i) * shrink;
     }
+
     if (out(i) != 1) {
-      throw std::runtime_error("Not converging.....");
+       throw std::runtime_error("Not converging.....");
     }
+
+
     pred.col(i) = yhat;
     loss(i) = arma::as_scalar(arma::sum(arma::pow(yhat, 2)) -
       2.0 * arma::sum(x % r));
